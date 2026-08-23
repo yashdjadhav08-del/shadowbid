@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Pinned Midnight toolchain per docs.midnight.network support matrix:
+      # compact 0.5.2 + compactc 0.31.1 <-> @midnight-ntwrk/compact-runtime 0.16.0
+      - name: Install Compact toolchain
+        run: |
+          set -eux
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://github.com/midnightntwrk/compact/releases/download/compact-v0.5.2/compact-x86_64-unknown-linux-musl.tar.xz" \
+            -o /tmp/cmgr.tar.xz
+          mkdir -p /tmp/cmgr && tar xJf /tmp/cmgr.tar.xz -C /tmp/cmgr
+          sudo install -m 0755 /tmp/cmgr/compact-x86_64-unknown-linux-musl/compact /usr/local/bin/compact
+          VERS_DIR="$HOME/.compact/versions/0.31.1/x86_64-unknown-linux-musl"
+          mkdir -p "$VERS_DIR" "$HOME/.compact/bin"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://github.com/midnightntwrk/compact/releases/download/compactc-v0.31.1/compactc_v0.31.1_x86_64-unknown-linux-musl.zip" \
+            -o /tmp/cc.zip
+          unzip -q -o /tmp/cc.zip -d "$VERS_DIR"
+          cp "$VERS_DIR"/compactc "$VERS_DIR"/fixup-compact "$VERS_DIR"/format-compact "$HOME/.compact/bin/" || true
+          compact --version
+          compact compile --version
+
+      - name: Compile Midnight contract
+        run: compact compile contracts/shadowbid.compact managed/shadowbid
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build

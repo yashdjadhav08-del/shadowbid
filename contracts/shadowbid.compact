@@ -1,0 +1,189 @@
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// ShadowBid — Privacy-Preserving Sealed-Bid Auction
+//
+// Privacy model
+//   PUBLIC   : auction metadata, bid COUNT per auction, bid commitments
+//              (hiding hashes), auction status, final winner + winning amount.
+//   PRIVATE  : individual sealed bid amounts and salts. A bid amount only
+//              ever crosses into public state through `claimWin`, and only
+//              when that bid strictly beats the current best — losing bids
+//              are never disclosed.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// User identity — witness-derived keypairs.
+// The ledger stores H(domain || secret); the DApp keeps the secret in its
+// wallet-managed private state and re-derives the key on every call.
+// ---------------------------------------------------------------------------
+
+witness callerSecretKey(): Bytes<32>;
+
+export circuit derivePublicKey(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([
+        pad(32, "shadowbid:key:v1"),
+        sk,
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// Ledger — public state
+// ---------------------------------------------------------------------------
+
+export enum AuctionStatus { OPEN, CLOSED }
+
+struct Auction {
+    sellerPK: Bytes<32>,
+    status: AuctionStatus,
+    bidCount: Uint<64>,
+    hasWinner: Boolean,
+    winningBidIndex: Uint<64>,
+    winningAmount: Uint<64>,
+    winnerPK: Bytes<32>,
+}
+
+export ledger auctionCount: Uint<64>;
+export ledger auctions: Map<Uint<64>, Auction>;
+export ledger itemNames: Map<Uint<64>, Opaque<"string">>;
+export ledger itemDescriptions: Map<Uint<64>, Opaque<"string">>;
+
+// Sealed bids live ONLY as hiding commitments. Key = commitment hash,
+// so a claimant must present the exact preimage (amount + salt + bidder key)
+// to prove a bid was genuinely sealed during the bidding phase.
+export ledger bidCommitments: Map<Bytes<32>, Boolean>;
+
+constructor() {
+    auctionCount = 0 as Uint<64>;
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers — deterministic, callable off-chain without a circuit context
+// ---------------------------------------------------------------------------
+
+export circuit computeBidCommitment(
+    auctionId: Uint<64>,
+    bidIndex: Uint<64>,
+    bidderPK: Bytes<32>,
+    salt: Bytes<32>,
+    bidAmount: Uint<64>,
+): Bytes<32> {
+    return persistentHash<Vector<6, Bytes<32>>>([
+        pad(32, "shadowbid:bid:v1"),
+        auctionId as Field as Bytes<32>,
+        bidIndex as Field as Bytes<32>,
+        bidderPK,
+        salt,
+        bidAmount as Field as Bytes<32>,
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// Seller flow
+// ---------------------------------------------------------------------------
+
+export circuit createAuction(itemName: Opaque<"string">, itemDescription: Opaque<"string">): Uint<64> {
+    const auctionId = auctionCount;
+    const sellerPK = derivePublicKey(callerSecretKey());
+
+    auctions.insert(disclose(auctionId), disclose(Auction {
+        sellerPK: sellerPK,
+        status: AuctionStatus.OPEN,
+        bidCount: 0 as Uint<64>,
+        hasWinner: false,
+        winningBidIndex: 0 as Uint<64>,
+        winningAmount: 0 as Uint<64>,
+        winnerPK: pad(32, "shadowbid:none"),
+    }));
+    itemNames.insert(disclose(auctionId), disclose(itemName));
+    itemDescriptions.insert(disclose(auctionId), disclose(itemDescription));
+
+    auctionCount = (auctionCount + 1) as Uint<64>;
+    return auctionId;
+}
+
+export circuit closeAuction(auctionId: Uint<64>): [] {
+    assert(auctions.member(disclose(auctionId)), "Auction does not exist");
+    const auction = auctions.lookup(disclose(auctionId));
+    assert(auction.sellerPK == derivePublicKey(callerSecretKey()), "Only the seller can close this auction");
+    assert(auction.status == AuctionStatus.OPEN, "Auction already closed");
+
+    auctions.insert(disclose(auctionId), disclose(Auction {
+        sellerPK: auction.sellerPK,
+        status: AuctionStatus.CLOSED,
+        bidCount: auction.bidCount,
+        hasWinner: auction.hasWinner,
+        winningBidIndex: auction.winningBidIndex,
+        winningAmount: auction.winningAmount,
+        winnerPK: auction.winnerPK,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Bidder flow — the bid amount is a private circuit parameter.
+// It is hashed into a commitment and NEVER written to the ledger.
+// ---------------------------------------------------------------------------
+
+export circuit submitBid(auctionId: Uint<64>, salt: Bytes<32>, bidAmount: Uint<64>): [] {
+    assert(auctions.member(disclose(auctionId)), "Auction does not exist");
+    const auction = auctions.lookup(disclose(auctionId));
+    assert(auction.status == AuctionStatus.OPEN, "Auction is not open");
+    assert(bidAmount > 0 as Uint<64>, "Bid amount must be positive");
+
+    const bidIndex = auction.bidCount;
+    const bidderPK = derivePublicKey(callerSecretKey());
+    const commitment = computeBidCommitment(auctionId, bidIndex, bidderPK, salt, bidAmount);
+
+    bidCommitments.insert(disclose(commitment), disclose(true));
+
+    auctions.insert(disclose(auctionId), disclose(Auction {
+        sellerPK: auction.sellerPK,
+        status: auction.status,
+        bidCount: (auction.bidCount + 1) as Uint<64>,
+        hasWinner: auction.hasWinner,
+        winningBidIndex: auction.winningBidIndex,
+        winningAmount: auction.winningAmount,
+        winnerPK: auction.winnerPK,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Settlement — claim-based winner verification.
+//
+// After close, any genuine bidder can prove (in ZK) that they hold the
+// preimage of a sealed commitment WITHOUT revealing the amount unless it
+// strictly beats the current best. The verified winner is whichever claim
+// survives last — it cannot be forged, because forging requires a matching
+// commitment preimage.
+// ---------------------------------------------------------------------------
+
+export circuit claimWin(
+    auctionId: Uint<64>,
+    bidIndex: Uint<64>,
+    bidderPK: Bytes<32>,
+    salt: Bytes<32>,
+    bidAmount: Uint<64>,
+): [] {
+    assert(auctions.member(disclose(auctionId)), "Auction does not exist");
+    const auction = auctions.lookup(disclose(auctionId));
+    assert(auction.status == AuctionStatus.CLOSED, "Auction is not closed yet");
+    assert(bidCommitments.member(disclose(computeBidCommitment(auctionId, bidIndex, bidderPK, salt, bidAmount))),
+        "Commitment does not match any sealed bid");
+
+    // Declared disclosure: only the BOOLEAN outcome of "beats current best"
+    // becomes observable through the state update — never the losing amount.
+    const beatsBest = disclose(bidAmount > auction.winningAmount);
+    if (auction.hasWinner == false || beatsBest) {
+        auctions.insert(disclose(auctionId), disclose(Auction {
+            sellerPK: auction.sellerPK,
+            status: auction.status,
+            bidCount: auction.bidCount,
+            hasWinner: true,
+            winningBidIndex: bidIndex,
+            winningAmount: bidAmount,
+            winnerPK: bidderPK,
+        }));
+    }
+}

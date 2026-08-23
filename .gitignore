@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+public/managed/
+
+# Compiled contract artifacts (regenerate with `npm run compile-contract`)
+managed/
+
+# Environment
+.env
+.env.local
+.env.preprod
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log

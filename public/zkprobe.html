@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      const out = [];
+      const log = (m) => { out.push(typeof m === 'string' ? m : JSON.stringify(m)); document.getElementById('out').textContent = out.join('\n'); };
+
+      function errTree(e, depth = 0) {
+        if (!e || depth > 6) return String(e);
+        const o = {};
+        o.name = e.name;
+        o.message = e.message;
+        if (e._tag) o._tag = e._tag;
+        for (const k of Object.keys(e)) {
+          try { if (typeof e[k] !== 'function') o[k] = typeof e[k] === 'object' ? JSON.stringify(e[k])?.slice(0, 300) : String(e[k]); } catch {}
+        }
+        if (e.cause) o.cause = errTree(e.cause, depth + 1);
+        return o;
+      }
+
+      try {
+        // Step 1: direct artifact fetch through the same provider class.
+        const { FetchZkConfigProvider } = await import('@midnight-ntwrk/midnight-js-fetch-zk-config-provider');
+        const zkp = new FetchZkConfigProvider(window.location.origin + '/managed/shadowbid', fetch);
+        try {
+          const vk = await zkp.getVerifierKey('createAuction');
+          log('[1] direct verifier key OK bytes=' + vk.length);
+        } catch (e) {
+          log('[1] direct verifier key FAIL ' + JSON.stringify(errTree(e)));
+        }
+
+        // Step 2: the exact deploy-time path (Effect runtime reading all keys).
+        const { makeContractExecutableRuntime } = await import('@midnight-ntwrk/midnight-js-types');
+        const proto = await import('@midnight-ntwrk/midnight-js-protocol/compact-js');
+        const managed = await import('/managed-src/shadowbid/contract/index.js').catch(async () => await import('../managed/shadowbid/contract/index.js'));
+        const compiled = proto.CompiledContract.withCompiledFileAssets(
+          proto.CompiledContract.withWitnesses(proto.CompiledContract.make('shadowbid', managed.Contract), {}),
+          window.location.origin + '/managed/shadowbid',
+        );
+        const runtime = makeContractExecutableRuntime(zkp, { coinPublicKey: '0'.repeat(63) + '1' });
+        const exec = proto.CompiledContract.make(compiled);
+        try {
+          await runtime.runPromiseExit(exec.initialize({ secretKey: new Uint8Array(32) }));
+          log('[2] effect runtime initialize OK');
+        } catch (e) {
+          log('[2] effect runtime FAIL ' + JSON.stringify(errTree(e), null, 1));
+        }
+        log('PROBE DONE');
+      } catch (e) {
+        log('FATAL ' + JSON.stringify(errTree(e)));
+        log('PROBE DONE');
+      }
+    </script>
+  </body>
+</html>
