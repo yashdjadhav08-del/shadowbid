@@ -92,6 +92,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     tick();
   }, [detect]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ phase: TxPhase; label?: string }>).detail;
+      if (detail?.phase) {
+        setTx((t) => ({ ...t, phase: detail.phase, label: detail.label ?? t.label }));
+      }
+    };
+    window.addEventListener('shadowbid:txPhase', handler);
+    return () => window.removeEventListener('shadowbid:txPhase', handler);
+  }, []);
+
   const linkContract = useCallback(async (api: ConnectedAPI, addr: string) => {
     setStatus('linking-contract');
     setError(null);
@@ -119,14 +130,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setStatus('connecting-wallet');
     try {
       // Must be inside the click gesture to avoid popup blocking.
-      // For now just establish the wallet session — contract deploy / indexer
-      // checks are deferred until the user actually creates/uses an auction.
-      const api = await connectWallet(preferred, CONFIG.networkId === 'undeployed' ? 'preprod' : CONFIG.networkId);
+      const api = await connectWallet(preferred, (CONFIG.networkId as string) === 'undeployed' ? 'preprod' : CONFIG.networkId);
       apiRef.current = api;
       const addr = await getUnshieldedAddress(api);
       setAddress(SHORT(addr));
       window.__shadowbidFullAddress = addr;
       setStatus('ready');
+      // If contract was already deployed, initialize client in background
+      if (storedContractAddress()) {
+        ShadowBidClient.connect(api, addr)
+          .then((c) => setClient(c))
+          .catch((e) => console.warn('[ShadowBid] Background client connect warning:', e));
+      }
     } catch (err) {
       setError(describeWalletError(err));
       setStatus('error');
@@ -141,14 +156,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setStatus(detect().length ? 'disconnected' : 'no-wallet');
   }, [detect]);
 
+  const ensureClientPromiseRef = useRef<Promise<ShadowBidClient> | null>(null);
+
   const ensureClient = useCallback(async (): Promise<ShadowBidClient> => {
     if (client) return client;
-    if (!apiRef.current || !window.__shadowbidFullAddress) throw new Error('Wallet not connected. Please connect first.');
-    // Call ShadowBidClient.connect() exactly once — it handles both deploy and find.
-    // Do NOT loop-retry: each call is a heavy blockchain operation that could deploy
-    // or query the indexer. The old loop caused 20x delays and duplicate deploys.
+    if (ensureClientPromiseRef.current) return await ensureClientPromiseRef.current;
+    if (!apiRef.current || !window.__shadowbidFullAddress)
+      throw new Error('Wallet not connected. Please connect first.');
     try {
-      const c = await ShadowBidClient.connect(apiRef.current, window.__shadowbidFullAddress);
+      console.info('[ShadowBid] ensureClient: connecting ShadowBidClient...');
+      ensureClientPromiseRef.current = ShadowBidClient.connect(apiRef.current, window.__shadowbidFullAddress);
+      const c = await ensureClientPromiseRef.current;
       setClient(c);
       setStatus('ready');
       return c;
@@ -156,6 +174,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setError(describeWalletError(err));
       setStatus('error');
       throw err;
+    } finally {
+      ensureClientPromiseRef.current = null;
     }
   }, [client]);
 

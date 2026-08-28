@@ -61,7 +61,19 @@ const storePassword = (accountId: string): string => {
 export async function buildProviders(
   api: ConnectedAPI,
 ): Promise<MidnightProviders<CircuitId, typeof PRIVATE_STATE_ID, ShadowBidPrivateState>> {
-  const { coinPublicKey, encryptionPublicKey } = await getShieldedIdentity(api);
+  const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms / 1000}s`)), ms)),
+    ]);
+
+  console.info('[ShadowBid] buildProviders: getting shielded identity...');
+  const { coinPublicKey, encryptionPublicKey } = await withTimeout(
+    getShieldedIdentity(api),
+    10_000,
+    'getShieldedIdentity',
+  );
+  console.info('[ShadowBid] buildProviders: shielded identity acquired.');
 
   // Prefer endpoints reported by the wallet; fall back to app config.
   let indexerUri = CONFIG.indexerUri;
@@ -138,14 +150,24 @@ export async function buildProviders(
   // `unprovenTx.prove(provider, costModel)` — NOT a `proveTx` method.
   const proofProvider = hasProvingProvider(api)
     ? await (async () => {
-        const keyMaterial = fetchKeyMaterialProvider(CONFIG.zkArtifactsBaseUrl);
-        const walletProver = await (api as unknown as {
-          getProvingProvider(km: unknown): Promise<unknown>;
-        }).getProvingProvider(keyMaterial);
-        return {
-          proveTx: (unprovenTx: UnprovenTransaction) =>
-            unprovenTx.prove(walletProver as never, CostModel.initialCostModel()) as unknown as Promise<UnboundTransaction>,
-        };
+        try {
+          console.info('[ShadowBid] buildProviders: fetching key material...');
+          const keyMaterial = fetchKeyMaterialProvider(CONFIG.zkArtifactsBaseUrl);
+          console.info('[ShadowBid] buildProviders: calling api.getProvingProvider...');
+          const walletProver = await withTimeout(
+            (api as unknown as { getProvingProvider(km: unknown): Promise<unknown> }).getProvingProvider(keyMaterial),
+            15_000,
+            'api.getProvingProvider',
+          );
+          console.info('[ShadowBid] buildProviders: wallet prover acquired.');
+          return {
+            proveTx: (unprovenTx: UnprovenTransaction) =>
+              unprovenTx.prove(walletProver as never, CostModel.initialCostModel()) as unknown as Promise<UnboundTransaction>,
+          };
+        } catch (e) {
+          console.warn('[ShadowBid] wallet prover failed/timed out, using http proof provider fallback:', e);
+          return httpClientProofProvider(CONFIG.proofServerUri, zkConfigProvider as never);
+        }
       })()
     : httpClientProofProvider(CONFIG.proofServerUri, zkConfigProvider as never);
 
@@ -158,6 +180,11 @@ export async function buildProviders(
       void ttl;
       const inputHex = hex(tx.serialize());
       console.info('[ShadowBid] balanceUnsealedTransaction: input bytes=', inputHex.length / 2);
+      window.dispatchEvent(
+        new CustomEvent('shadowbid:txPhase', {
+          detail: { phase: 'awaiting-authorization', label: 'Please approve the transaction in your 1AM wallet popup…' },
+        }),
+      );
       const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
         Promise.race([
           p,
@@ -167,6 +194,11 @@ export async function buildProviders(
         const result = await withTimeout(api.balanceUnsealedTransaction(inputHex, { payFees: true }), 60_000);
         const balancedHex = typeof result === 'string' ? result : result.tx;
         console.info('[ShadowBid] balanceUnsealedTransaction: done, output bytes=', balancedHex.length / 2);
+        window.dispatchEvent(
+          new CustomEvent('shadowbid:txPhase', {
+            detail: { phase: 'submitting', label: 'Wallet approved! Submitting transaction to Midnight network…' },
+          }),
+        );
         return Transaction.deserialize(
           'signature',
           'proof',
@@ -193,6 +225,12 @@ export async function buildProviders(
         await api.submitTransaction(serialized);
         const hash = hex((tx as unknown as { transactionHash(): Uint8Array }).transactionHash());
         console.info('[ShadowBid] submitTransaction: submitted, hash=', hash);
+        window.dispatchEvent(
+          new CustomEvent('shadowbid:txPhase', {
+            detail: { phase: 'submitting', label: '✓ Transaction submitted to Midnight network!' },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent('shadowbid:txSubmitted', { detail: { hash } }));
         return hash;
       } catch (e) {
         console.error('[ShadowBid] submitTransaction FAILED:', e);

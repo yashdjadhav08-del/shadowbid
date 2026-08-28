@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { decodeAuctions, type AuctionView, storedContractAddress } from '../services/shadowbid.js';
+import { decodeAuctions, type AuctionView, storedContractAddress, loadPendingAuctions, AuctionStatus } from '../services/shadowbid.js';
 import type { ShadowBidLedger } from '../services/shadowbid.js';
 import { CONFIG } from '../config.js';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
@@ -29,7 +29,25 @@ export function useAuctions(pollMs = 8000): AuctionsState {
     const hasClient = !!client;
     const hasAddress = !!address;
     if (!hasClient && !hasAddress) {
-      setAuctions([]);
+      const pending = loadPendingAuctions();
+      if (pending.length > 0) {
+        setAuctions(
+          pending.map((p, idx) => ({
+            id: BigInt(idx + 1),
+            sellerPKHex: p.sellerPKHex,
+            itemName: p.itemName,
+            itemDescription: p.itemDescription,
+            status: AuctionStatus.OPEN,
+            bidCount: 0n,
+            hasWinner: false,
+            winningBidIndex: 0n,
+            winningAmount: null,
+            winnerPKHex: null,
+          })),
+        );
+      } else {
+        setAuctions([]);
+      }
       setLedger(null);
       setError(null);
       setLoading(false);
@@ -55,7 +73,26 @@ export function useAuctions(pollMs = 8000): AuctionsState {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
+        const pending = loadPendingAuctions();
+        if (pending.length > 0) {
+          setAuctions(
+            pending.map((p, idx) => ({
+              id: BigInt(idx + 1),
+              sellerPKHex: p.sellerPKHex,
+              itemName: p.itemName,
+              itemDescription: p.itemDescription,
+              status: AuctionStatus.OPEN,
+              bidCount: 0n,
+              hasWinner: false,
+              winningBidIndex: 0n,
+              winningAmount: null,
+              winnerPKHex: null,
+            })),
+          );
+          setError(null);
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+        }
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {

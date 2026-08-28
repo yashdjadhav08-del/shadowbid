@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { useWallet, shortAddress } from '../hooks/useWallet.js';
 import { useHashRoute } from '../hooks/useHashRoute.js';
-import { NETWORK_ID, switchNetwork, type NetworkId } from '../config.js';
 
 function WalletButton() {
   const { status, address, connect, disconnect } = useWallet();
@@ -58,20 +57,8 @@ export function Header() {
           {link('/my', 'My Participation')}
           {link('/privacy', 'Privacy Model')}
         </nav>
-        <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, opacity: 0.9 }}>
-            <span>Network</span>
-            <select
-              value={NETWORK_ID}
-              onChange={(e) => switchNetwork(e.target.value as NetworkId)}
-              style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
-              title="Switch Midnight network (reloads)"
-            >
-              <option value="preprod">Preprod</option>
-              <option value="preview">Preview</option>
-              <option value="undeployed">Undeployed (local)</option>
-            </select>
-          </label>
+        <div className="header-right">
+          <span style={{ fontSize: 12, opacity: 0.8, border: '1px solid var(--border)', padding: '4px 8px', borderRadius: 6 }}>Preprod</span>
           <WalletButton />
         </div>
       </div>

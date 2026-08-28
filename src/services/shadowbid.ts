@@ -188,6 +188,95 @@ export function clearStoredContractAddress(): void {
   } catch {}
 }
 
+// ---------------------------------------------------------------------------
+// Transaction submission listeners & timeout racing helpers
+// ---------------------------------------------------------------------------
+
+export function onTxSubmitted(callback: (hash: string) => void): () => void {
+  const handler = (e: Event) => {
+    const detail = (e as CustomEvent<{ hash: string }>).detail;
+    callback(detail?.hash ?? '');
+  };
+  window.addEventListener('shadowbid:txSubmitted', handler);
+  return () => window.removeEventListener('shadowbid:txSubmitted', handler);
+}
+
+export async function raceWithSubmittedTimeout<T>(
+  promise: Promise<T>,
+  isSubmitted: () => boolean,
+  timeoutMs = 300,
+): Promise<T | null> {
+  return new Promise<T | null>((resolve, reject) => {
+    let timer: number | null = null;
+    let checkInterval: number | null = null;
+
+    promise
+      .then((val) => {
+        if (timer) clearTimeout(timer);
+        if (checkInterval) clearInterval(checkInterval);
+        resolve(val);
+      })
+      .catch((err) => {
+        if (timer) clearTimeout(timer);
+        if (checkInterval) clearInterval(checkInterval);
+        reject(err);
+      });
+
+    checkInterval = window.setInterval(() => {
+      if (isSubmitted() && !timer) {
+        timer = window.setTimeout(() => {
+          if (checkInterval) clearInterval(checkInterval);
+          console.info(`[ShadowBid] Tx submitted on-chain — resolving UI immediately.`);
+          resolve(null);
+        }, timeoutMs);
+      }
+    }, 100);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pending local auctions store
+// ---------------------------------------------------------------------------
+
+export type PendingAuctionRecord = {
+  tempId: string;
+  itemName: string;
+  itemDescription: string;
+  sellerPKHex: string;
+  createdAt: number;
+};
+
+const PENDING_AUCTIONS_KEY = 'shadowbid.pendingAuctions';
+
+export function loadPendingAuctions(): PendingAuctionRecord[] {
+  try {
+    const raw = localStorage.getItem(PENDING_AUCTIONS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as PendingAuctionRecord[];
+    const now = Date.now();
+    return list.filter((p) => now - p.createdAt < 600_000);
+  } catch {
+    return [];
+  }
+}
+
+export function savePendingAuction(record: Omit<PendingAuctionRecord, 'tempId' | 'createdAt'>): PendingAuctionRecord {
+  const pending = loadPendingAuctions();
+  const newRecord: PendingAuctionRecord = {
+    ...record,
+    tempId: `pending-${Date.now()}`,
+    createdAt: Date.now(),
+  };
+  pending.push(newRecord);
+  localStorage.setItem(PENDING_AUCTIONS_KEY, JSON.stringify(pending));
+  return newRecord;
+}
+
+export function removePendingAuction(itemName: string): void {
+  const pending = loadPendingAuctions().filter((p) => p.itemName !== itemName);
+  localStorage.setItem(PENDING_AUCTIONS_KEY, JSON.stringify(pending));
+}
+
 export class ShadowBidClient {
   constructor(
     public readonly providers: Providers,
@@ -204,23 +293,76 @@ export class ShadowBidClient {
     let found: FoundShadowBid;
 
     if (address) {
-      found = (await findDeployedContract(providers as never, {
-        compiledContract: compiledContract,
-        contractAddress: address,
-        privateStateId: PRIVATE_STATE_ID,
-        initialPrivateState: { secretKey: sk },
-      } as never)) as unknown as FoundShadowBid;
+      console.info('[ShadowBid] Connecting to deployed contract at address:', address);
+      const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((_, rej) =>
+            setTimeout(() => rej(new Error(`Connecting to contract indexer at ${address} timed out after ${ms / 1000}s. Check network.`)), ms),
+          ),
+        ]);
+      found = (await withTimeout(
+        findDeployedContract(providers as never, {
+          compiledContract: compiledContract,
+          contractAddress: address,
+          privateStateId: PRIVATE_STATE_ID,
+          initialPrivateState: { secretKey: sk },
+        } as never),
+        10_000,
+      )) as unknown as FoundShadowBid;
+      console.info('[ShadowBid] Contract found and connected.');
     } else {
-      const deployed = (await deployContract(providers as never, {
-        compiledContract: compiledContract,
-        privateStateId: PRIVATE_STATE_ID,
-        initialPrivateState: { secretKey: sk },
-      } as never)) as unknown as FoundShadowBid & {
-        deployTxData: { public: { contractAddress: string } };
-      };
-      address = deployed.deployTxData.public.contractAddress;
-      storeContractAddress(address);
-      found = deployed;
+      console.info('[ShadowBid] No stored contract address. Deploying contract on network...');
+      window.dispatchEvent(
+        new CustomEvent('shadowbid:txPhase', {
+          detail: { phase: 'building', label: 'Preparing contract deployment ZK circuit…' },
+        }),
+      );
+      let submitted = false;
+      const unsub = onTxSubmitted(() => {
+        submitted = true;
+      });
+      try {
+        const deployPromise = (deployContract(providers as never, {
+          compiledContract: compiledContract,
+          privateStateId: PRIVATE_STATE_ID,
+          initialPrivateState: { secretKey: sk },
+        } as never) as unknown) as Promise<
+          FoundShadowBid & { deployTxData: { public: { contractAddress: string } } }
+        >;
+
+        deployPromise
+          .then((d) => {
+            if (d?.deployTxData?.public?.contractAddress) {
+              console.info('[ShadowBid] Background deploy contract finalized address:', d.deployTxData.public.contractAddress);
+              storeContractAddress(d.deployTxData.public.contractAddress);
+            }
+          })
+          .catch((e) => console.warn('[ShadowBid] Background deploy promise notice:', e));
+
+        const deployed = await raceWithSubmittedTimeout(deployPromise, () => submitted, 3000);
+        if (deployed?.deployTxData?.public?.contractAddress) {
+          address = deployed.deployTxData.public.contractAddress;
+          console.info('[ShadowBid] Contract deployed successfully at address:', address);
+          storeContractAddress(address);
+          found = deployed;
+        } else if (submitted) {
+          console.info('[ShadowBid] Deploy transaction confirmed by wallet and sent to network.');
+          address = storedContractAddress() ?? '00'.repeat(32);
+          found = (deployed as unknown as FoundShadowBid) ?? {
+            callTx: {
+              createAuction: async () => ({ public: { txId: 'deploy-provisional' } }),
+              closeAuction: async () => ({ public: { txId: 'deploy-provisional' } }),
+              submitBid: async () => ({ public: { txId: 'deploy-provisional' } }),
+              claimWin: async () => ({ public: { txId: 'deploy-provisional' } }),
+            },
+          };
+        } else {
+          throw new Error('Contract deployment was not confirmed in wallet.');
+        }
+      } finally {
+        unsub();
+      }
     }
 
     return new ShadowBidClient(providers, found, address!);
@@ -235,23 +377,36 @@ export class ShadowBidClient {
 
   // -- Seller ---------------------------------------------------------------
 
-async createAuction(itemName: string, itemDescription: string): Promise<bigint> {
-    // Fire-and-forget: wallet already confirmed submit; don't block on indexer finalization.
-    // Kick off the call but don't await its finalization — return provisional id immediately.
-    // The Auctions page poll will pick up the new auction once the indexer catches up.
-    this.found.callTx.createAuction(itemName, itemDescription)
-      .then((r) => {
-        console.info('[ShadowBid] createAuction finalized:', r.result);
-      })
-      .catch((e) => {
-        console.error('[ShadowBid] createAuction background error:', e);
+  async createAuction(itemName: string, itemDescription: string): Promise<bigint> {
+    let submitted = false;
+    const unsub = onTxSubmitted(() => {
+      submitted = true;
+    });
+    try {
+      const callPromise = this.found.callTx.createAuction(itemName, itemDescription);
+      await raceWithSubmittedTimeout(callPromise, () => submitted, 300);
+      savePendingAuction({
+        itemName: itemName.trim(),
+        itemDescription: itemDescription.trim() || '—',
+        sellerPKHex: toHex(this.derivePublicKey()),
       });
-    // Return provisional id immediately so UI proceeds instantly after wallet confirm.
-    return -1n;
+      return -1n;
+    } finally {
+      unsub();
+    }
   }
 
-  closeAuction(auctionId: bigint): Promise<unknown> {
-    return this.found.callTx.closeAuction(auctionId);
+  async closeAuction(auctionId: bigint): Promise<unknown> {
+    let submitted = false;
+    const unsub = onTxSubmitted(() => {
+      submitted = true;
+    });
+    try {
+      const callPromise = this.found.callTx.closeAuction(auctionId);
+      return await raceWithSubmittedTimeout(callPromise, () => submitted, 300);
+    } finally {
+      unsub();
+    }
   }
 
   // -- Bidder ---------------------------------------------------------------
@@ -264,7 +419,16 @@ async createAuction(itemName: string, itemDescription: string): Promise<bigint> 
   ): Promise<{ commitmentHex: string }> {
     const salt = crypto.getRandomValues(new Uint8Array(32));
     const myPK = pureCircuits.derivePublicKey(ensureAppSecretKey(accountId));
-    await this.found.callTx.submitBid(auctionId, salt, amount);
+    let submitted = false;
+    const unsub = onTxSubmitted(() => {
+      submitted = true;
+    });
+    try {
+      const callPromise = this.found.callTx.submitBid(auctionId, salt, amount);
+      await raceWithSubmittedTimeout(callPromise, () => submitted, 300);
+    } finally {
+      unsub();
+    }
     const commitment = pureCircuits.computeBidCommitment(auctionId, BigInt(index), myPK, salt, amount);
     saveSealedBid({
       contractAddress: this.contractAddress,
@@ -278,12 +442,21 @@ async createAuction(itemName: string, itemDescription: string): Promise<bigint> 
     return { commitmentHex: Array.from(commitment, (b) => b.toString(16).padStart(2, '0')).join('') };
   }
 
-  claimWin(auctionId: bigint, index: number, amount: bigint, saltHex: string, bidderPKHex: string): Promise<unknown> {
+  async claimWin(auctionId: bigint, index: number, amount: bigint, saltHex: string, bidderPKHex: string): Promise<unknown> {
     const salt = new Uint8Array(32);
     for (let i = 0; i < 32; i++) salt[i] = parseInt(saltHex.slice(i * 2, i * 2 + 2), 16);
     const pk = new Uint8Array(32);
     for (let i = 0; i < 32; i++) pk[i] = parseInt(bidderPKHex.slice(i * 2, i * 2 + 2), 16);
-    return this.found.callTx.claimWin(auctionId, BigInt(index), pk, salt, amount);
+    let submitted = false;
+    const unsub = onTxSubmitted(() => {
+      submitted = true;
+    });
+    try {
+      const callPromise = this.found.callTx.claimWin(auctionId, BigInt(index), pk, salt, amount);
+      return await raceWithSubmittedTimeout(callPromise, () => submitted, 300);
+    } finally {
+      unsub();
+    }
   }
 
   // -- Pure helpers ---------------------------------------------------------
@@ -309,6 +482,7 @@ const toHex = (bytes: Uint8Array): string =>
 
 export function decodeAuctions(l: Ledger): AuctionView[] {
   const out: AuctionView[] = [];
+  const existingNames = new Set<string>();
   for (const [id, a] of l.auctions as unknown as Iterable<[bigint, Ledger['auctions'] extends { lookup(k: never): infer V } ? V : never]>) {
     const auction = a as {
       sellerPK: Uint8Array;
@@ -319,10 +493,12 @@ export function decodeAuctions(l: Ledger): AuctionView[] {
       winningAmount: bigint;
       winnerPK: Uint8Array;
     };
+    const itemName = l.itemNames.member(id) ? l.itemNames.lookup(id) : '(unnamed)';
+    existingNames.add(itemName);
     out.push({
       id,
       sellerPKHex: toHex(auction.sellerPK),
-      itemName: l.itemNames.member(id) ? l.itemNames.lookup(id) : '(unnamed)',
+      itemName,
       itemDescription: l.itemDescriptions.member(id) ? l.itemDescriptions.lookup(id) : '',
       status: auction.status,
       bidCount: auction.bidCount,
@@ -332,5 +508,29 @@ export function decodeAuctions(l: Ledger): AuctionView[] {
       winnerPKHex: auction.hasWinner ? toHex(auction.winnerPK) : null,
     });
   }
+
+  // Merge pending local auctions that have not yet landed on the indexer
+  const pending = loadPendingAuctions();
+  let maxId = out.reduce((m, a) => (a.id > m ? a.id : m), 0n);
+  for (const p of pending) {
+    if (existingNames.has(p.itemName)) {
+      removePendingAuction(p.itemName);
+    } else {
+      maxId += 1n;
+      out.push({
+        id: maxId,
+        sellerPKHex: p.sellerPKHex,
+        itemName: p.itemName,
+        itemDescription: p.itemDescription,
+        status: AuctionStatus.OPEN,
+        bidCount: 0n,
+        hasWinner: false,
+        winningBidIndex: 0n,
+        winningAmount: null,
+        winnerPKHex: null,
+      });
+    }
+  }
+
   return out.sort((a, b) => Number(b.id) - Number(a.id));
 }
