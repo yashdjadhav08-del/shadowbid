@@ -22,6 +22,17 @@ export function getLiveAuctions(): LiveAuctionPayload[] {
 }
 
 export function initLiveSync(): void {
+  // Fetch initial auctions immediately via REST API
+  fetch('/api/auctions')
+    .then((r) => r.json())
+    .then((data) => {
+      if (Array.isArray(data?.auctions) && data.auctions.length > 0) {
+        liveAuctionsCache = data.auctions;
+        emitLiveUpdate();
+      }
+    })
+    .catch(() => {});
+
   if (eventSource) return;
 
   // Listen to BroadcastChannel for instant cross-tab sync
@@ -44,7 +55,7 @@ export function initLiveSync(): void {
     eventSource.addEventListener('init', (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
-        if (Array.isArray(data.auctions) && data.auctions.length > 0) {
+        if (Array.isArray(data.auctions)) {
           liveAuctionsCache = data.auctions;
         }
         if (data.contractAddress) {

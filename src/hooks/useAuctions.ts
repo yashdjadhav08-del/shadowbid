@@ -4,7 +4,7 @@ import type { ShadowBidLedger } from '../services/shadowbid.js';
 import { CONFIG } from '../config.js';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { useWallet } from './useWallet.js';
-import { initLiveSync } from '../services/liveSync.js';
+import { initLiveSync, getLiveAuctions } from '../services/liveSync.js';
 
 export type AuctionsState = {
   auctions: AuctionView[];
@@ -13,6 +13,22 @@ export type AuctionsState = {
   error: string | null;
   refresh: () => void;
 };
+
+function getCombinedPendingAuctions() {
+  const local = loadPendingAuctions();
+  const live = getLiveAuctions();
+  const map = new Map<string, { itemName: string; itemDescription?: string; sellerPKHex?: string }>();
+  for (const p of [...local, ...live]) {
+    if (p.itemName && !map.has(p.itemName)) {
+      map.set(p.itemName, {
+        itemName: p.itemName,
+        itemDescription: p.itemDescription,
+        sellerPKHex: (p as { sellerPKHex?: string }).sellerPKHex ?? '00'.repeat(32),
+      });
+    }
+  }
+  return Array.from(map.values());
+}
 
 /** Polls the indexer for the contract's public state and decodes auction views. */
 export function useAuctions(pollMs = 8000): AuctionsState {
@@ -37,14 +53,14 @@ export function useAuctions(pollMs = 8000): AuctionsState {
     const hasClient = !!client;
     const hasAddress = !!address;
     if (!hasClient && !hasAddress) {
-      const pending = loadPendingAuctions();
+      const pending = getCombinedPendingAuctions();
       if (pending.length > 0) {
         setAuctions(
           pending.map((p, idx) => ({
             id: BigInt(idx + 1),
-            sellerPKHex: p.sellerPKHex,
+            sellerPKHex: p.sellerPKHex ?? '00'.repeat(32),
             itemName: p.itemName,
-            itemDescription: p.itemDescription,
+            itemDescription: p.itemDescription ?? '',
             status: AuctionStatus.OPEN,
             bidCount: 0n,
             hasWinner: false,
@@ -81,14 +97,14 @@ export function useAuctions(pollMs = 8000): AuctionsState {
       })
       .catch((err) => {
         if (cancelled) return;
-        const pending = loadPendingAuctions();
+        const pending = getCombinedPendingAuctions();
         if (pending.length > 0) {
           setAuctions(
             pending.map((p, idx) => ({
               id: BigInt(idx + 1),
-              sellerPKHex: p.sellerPKHex,
+              sellerPKHex: p.sellerPKHex ?? '00'.repeat(32),
               itemName: p.itemName,
-              itemDescription: p.itemDescription,
+              itemDescription: p.itemDescription ?? '',
               status: AuctionStatus.OPEN,
               bidCount: 0n,
               hasWinner: false,
