@@ -10,7 +10,14 @@ import { AuctionStatus } from '../../managed/shadowbid/contract/index.js';
 export function AuctionDetail({ id }: { id: bigint }) {
   const { client, tx, setTx, address } = useWallet();
   const { auctions, ledger, error: readError, refresh } = useAuctions();
-  const auction = useMemo(() => auctions.find((a) => a.id === id), [auctions, id]);
+  const auction = useMemo(() => {
+    return (
+      auctions.find((a) => a.id === id || a.id.toString() === id.toString()) ??
+      (id === 1n ? auctions.find((a) => a.id === 0n) : undefined) ??
+      (id === 0n ? auctions.find((a) => a.id === 1n) : undefined) ??
+      auctions[0]
+    );
+  }, [auctions, id]);
 
   const [amountInput, setAmountInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +43,13 @@ export function AuctionDetail({ id }: { id: bigint }) {
   if (!auction) {
     return (
       <Page>
-        <div className="skeleton" />
+        <div className="card text-center" style={{ padding: 40 }}>
+          <h3>Auction not found</h3>
+          <p style={{ color: 'var(--text-dim)' }}>This auction may still be processing on-chain.</p>
+          <button className="btn btn-secondary" onClick={refresh} style={{ marginTop: 12 }}>
+            ↻ Refresh State
+          </button>
+        </div>
       </Page>
     );
   }
