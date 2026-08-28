@@ -29,6 +29,7 @@ import {
 import { CONFIG, NETWORK_ID, PRIVATE_STATE_ID } from '../config.js';
 import { buildProviders } from './providers.js';
 import type { ConnectedAPI } from './wallet.js';
+import { getLiveAuctions, publishLiveAuction, publishLiveContract } from './liveSync.js';
 
 export { AuctionStatus };
 
@@ -178,6 +179,8 @@ export function storedContractAddress(): string | null {
 export function storeContractAddress(address: string): void {
   try {
     localStorage.setItem(addressKey(), address);
+    localStorage.setItem(ADDRESS_KEY, address);
+    publishLiveContract(address);
   } catch {}
 }
 
@@ -269,6 +272,7 @@ export function savePendingAuction(record: Omit<PendingAuctionRecord, 'tempId' |
   };
   pending.push(newRecord);
   localStorage.setItem(PENDING_AUCTIONS_KEY, JSON.stringify(pending));
+  publishLiveAuction(newRecord);
   return newRecord;
 }
 
@@ -509,21 +513,26 @@ export function decodeAuctions(l: Ledger): AuctionView[] {
     });
   }
 
-  // Merge pending local auctions that have not yet landed on the indexer
-  const pending = loadPendingAuctions();
+  // Merge pending local & live server auctions that have not yet landed on the indexer
+  const pending = [...loadPendingAuctions(), ...getLiveAuctions()];
   let maxId = out.reduce((m, a) => (a.id > m ? a.id : m), 0n);
+  const seenPending = new Set<string>();
+
   for (const p of pending) {
+    if (!p.itemName || seenPending.has(p.itemName)) continue;
+    seenPending.add(p.itemName);
+
     if (existingNames.has(p.itemName)) {
       removePendingAuction(p.itemName);
     } else {
       maxId += 1n;
       out.push({
         id: maxId,
-        sellerPKHex: p.sellerPKHex,
+        sellerPKHex: p.sellerPKHex ?? '00'.repeat(32),
         itemName: p.itemName,
-        itemDescription: p.itemDescription,
-        status: AuctionStatus.OPEN,
-        bidCount: 0n,
+        itemDescription: p.itemDescription ?? '',
+        status: ((p as { status?: unknown }).status as AuctionStatus) ?? AuctionStatus.OPEN,
+        bidCount: BigInt(Number((p as { bidCount?: unknown }).bidCount ?? 0)),
         hasWinner: false,
         winningBidIndex: 0n,
         winningAmount: null,

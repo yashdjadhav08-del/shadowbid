@@ -4,6 +4,7 @@ import type { ShadowBidLedger } from '../services/shadowbid.js';
 import { CONFIG } from '../config.js';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { useWallet } from './useWallet.js';
+import { initLiveSync } from '../services/liveSync.js';
 
 export type AuctionsState = {
   auctions: AuctionView[];
@@ -23,6 +24,13 @@ export function useAuctions(pollMs = 8000): AuctionsState {
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+
+  useEffect(() => {
+    initLiveSync();
+    const handleLiveUpdate = () => refresh();
+    window.addEventListener('shadowbid:liveUpdate', handleLiveUpdate);
+    return () => window.removeEventListener('shadowbid:liveUpdate', handleLiveUpdate);
+  }, [refresh]);
 
   useEffect(() => {
     const address = storedContractAddress();
