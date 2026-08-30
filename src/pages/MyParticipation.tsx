@@ -100,28 +100,38 @@ export function MyParticipation() {
                 const a = auctionStatus(r.auctionId);
                 const statusLabel =
                   !a ? 'unknown yet' : a.status === AuctionStatus.OPEN ? 'auction open' : r.claimed ? 'claimed' : a.hasWinner ? 'settled' : 'claimable!';
-                  const auctionForBid = auctionStatus(r.auctionId);
-                  const isBidSeller = !!myPK && !!auctionForBid &&
-                    Array.from(pureCircuits.derivePublicKey(ensureAppSecretKey(address!))).map(b => b.toString(16).padStart(2,'0')).join('').toLowerCase() ===
-                    auctionForBid.sellerPKHex.toLowerCase();
-                  return (
-                    <tr key={`${r.auctionId}-${r.index}`}>
-                      <td>
-                        <a href={`#/auction/${r.auctionId}`} className="mono">#{r.auctionId}</a>{' '}
-                        {auctionForBid ? <span style={{ color: 'var(--text-dim)' }}>{auctionForBid.itemName}</span> : null}
-                      </td>
-                      <td><span className="mono">{BigInt(r.amount).toString()}</span> <span className="privacy-chip" style={{ marginLeft: 6 }}>🔒 only you know this</span></td>
-                      <td className="mono">{r.index}</td>
-                      <td>{statusLabel}</td>
-                      <td>
-                        {claimable(r) && isBidSeller && (
-                          <button className="btn btn-success btn-sm" onClick={() => void claim(r)}>
-                            Claim win
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
+                // Seller check: localStorage (set at creation) is the most reliable source
+                const isBidSeller = (() => {
+                  if (!address || !a) return false;
+                  try {
+                    const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
+                    const creators = JSON.parse(creatorsRaw) as Record<string, string>;
+                    if (creators[a.itemName] === address) return true;
+                    if (creators[r.auctionId] === address) return true;
+                  } catch {}
+                  // Fallback: ZK key comparison
+                  if (!myPK || !a.sellerPKHex || a.sellerPKHex === '00'.repeat(32)) return false;
+                  const myPKHex = Array.from(pureCircuits.derivePublicKey(ensureAppSecretKey(address!))).map(b => b.toString(16).padStart(2,'0')).join('');
+                  return myPKHex.toLowerCase() === a.sellerPKHex.toLowerCase();
+                })();
+                return (
+                  <tr key={`${r.auctionId}-${r.index}`}>
+                    <td>
+                      <a href={`#/auction/${r.auctionId}`} className="mono">#{r.auctionId}</a>{' '}
+                      {a ? <span style={{ color: 'var(--text-dim)' }}>{a.itemName}</span> : null}
+                    </td>
+                    <td><span className="mono">{BigInt(r.amount).toString()}</span> <span className="privacy-chip" style={{ marginLeft: 6 }}>🔒 only you know this</span></td>
+                    <td className="mono">{r.index}</td>
+                    <td>{statusLabel}</td>
+                    <td>
+                      {claimable(r) && isBidSeller && (
+                        <button className="btn btn-success btn-sm" onClick={() => void claim(r)}>
+                          Claim win
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
               })}
             </tbody>
           </table>

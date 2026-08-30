@@ -6,7 +6,7 @@ import { describeWalletError } from '../services/wallet.js';
 import { CONFIG } from '../config.js';
 
 export function CreateAuction({ navigate }: { navigate: (to: string) => void }) {
-  const { status, client, tx, setTx, connect, ensureClient } = useWallet();
+  const { status, client, tx, setTx, connect, ensureClient, address } = useWallet();
   const [itemName, setItemName] = useState('');
   const [itemDescription, setItemDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +39,16 @@ export function CreateAuction({ navigate }: { navigate: (to: string) => void }) 
       setTx({ phase: 'building', label: `Preparing ZK circuit for "${itemName.trim()}"…` });
       const c = client ?? (await ensureClient());
       await c.createAuction(itemName.trim(), itemDescription.trim() || '—');
+
+      // Record ownership so the seller can be identified on the auction detail page
+      if (address) {
+        try {
+          const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
+          const creators = JSON.parse(creatorsRaw) as Record<string, string>;
+          creators[itemName.trim()] = address;
+          localStorage.setItem('shadowbid.auctionCreators', JSON.stringify(creators));
+        } catch {}
+      }
 
       setTx({ phase: 'done', label: '✓ Auction created and submitted to network!' });
       setTimeout(() => {

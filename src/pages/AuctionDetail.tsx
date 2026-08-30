@@ -37,9 +37,20 @@ export function AuctionDetail({ id }: { id: bigint }) {
   }, [address]);
 
   const isSeller = useMemo(() => {
-    if (!myPKHex || !auction?.sellerPKHex) return false;
+    if (!address || !auction) return false;
+    // Primary check: match wallet address recorded at auction creation time
+    try {
+      const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
+      const creators = JSON.parse(creatorsRaw) as Record<string, string>;
+      if (creators[auction.itemName] === address) return true;
+      if (creators[auction.id.toString()] === address) return true;
+    } catch {}
+    // Fallback: compare derived ZK public key with on-chain sellerPK
+    if (!myPKHex || !auction.sellerPKHex) return false;
+    const placeholder = '00'.repeat(32);
+    if (auction.sellerPKHex === placeholder) return false; // live server placeholder
     return myPKHex.toLowerCase() === auction.sellerPKHex.toLowerCase();
-  }, [myPKHex, auction?.sellerPKHex]);
+  }, [address, myPKHex, auction?.sellerPKHex, auction?.itemName, auction?.id]);
 
   const myBidsOnAuction = useMemo(() => {
     if (!address || !auction) return [];
