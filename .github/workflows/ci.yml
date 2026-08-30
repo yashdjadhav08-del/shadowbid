@@ -37,7 +37,10 @@ jobs:
             "https://github.com/midnightntwrk/compact/releases/download/compactc-v0.31.1/compactc_v0.31.1_x86_64-unknown-linux-musl.zip" \
             -o /tmp/cc.zip
           unzip -q -o /tmp/cc.zip -d "$VERS_DIR"
-          cp "$VERS_DIR"/compactc "$VERS_DIR"/fixup-compact "$VERS_DIR"/format-compact "$HOME/.compact/bin/" || true
+          chmod +x "$VERS_DIR"/compactc "$VERS_DIR"/fixup-compact "$VERS_DIR"/format-compact || true
+          ln -sf "$VERS_DIR/compactc" "$HOME/.compact/bin/compactc"
+          ln -sf "$VERS_DIR/fixup-compact" "$HOME/.compact/bin/fixup-compact"
+          ln -sf "$VERS_DIR/format-compact" "$HOME/.compact/bin/format-compact"
           compact --version
           compact compile --version
 
