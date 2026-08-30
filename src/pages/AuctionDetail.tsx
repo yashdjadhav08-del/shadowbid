@@ -37,20 +37,37 @@ export function AuctionDetail({ id }: { id: bigint }) {
   }, [address]);
 
   const isSeller = useMemo(() => {
-    if (!address || !auction) return false;
-    // Primary check: match wallet address recorded at auction creation time
+    if (!auction) return false;
+    // Use full wallet address (the shortened `address` state won't match ensureAppSecretKey)
+    const fullAddr = window.__shadowbidFullAddress ?? address;
+    if (!fullAddr) return false;
+
+    // Primary check: localStorage entry written at auction creation time
     try {
       const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
       const creators = JSON.parse(creatorsRaw) as Record<string, string>;
-      if (creators[auction.itemName] === address) return true;
-      if (creators[auction.id.toString()] === address) return true;
+      // Match against both full and short address forms
+      const shortAddr = address ?? '';
+      if (
+        creators[auction.itemName] === fullAddr ||
+        creators[auction.itemName] === shortAddr ||
+        creators[auction.id.toString()] === fullAddr ||
+        creators[auction.id.toString()] === shortAddr
+      ) return true;
     } catch {}
+
     // Fallback: compare derived ZK public key with on-chain sellerPK
-    if (!myPKHex || !auction.sellerPKHex) return false;
     const placeholder = '00'.repeat(32);
-    if (auction.sellerPKHex === placeholder) return false; // live server placeholder
-    return myPKHex.toLowerCase() === auction.sellerPKHex.toLowerCase();
-  }, [address, myPKHex, auction?.sellerPKHex, auction?.itemName, auction?.id]);
+    if (!auction.sellerPKHex || auction.sellerPKHex === placeholder) return false;
+    try {
+      const sk = ensureAppSecretKey(fullAddr);
+      const pk = pureCircuits.derivePublicKey(sk);
+      const derivedHex = Array.from(pk, (b) => b.toString(16).padStart(2, '0')).join('');
+      if (derivedHex.toLowerCase() === auction.sellerPKHex.toLowerCase()) return true;
+    } catch {}
+
+    return false;
+  }, [address, auction?.sellerPKHex, auction?.itemName, auction?.id]);
 
   const myBidsOnAuction = useMemo(() => {
     if (!address || !auction) return [];

@@ -41,14 +41,15 @@ export function CreateAuction({ navigate }: { navigate: (to: string) => void }) 
       await c.createAuction(itemName.trim(), itemDescription.trim() || '—');
 
       // Record ownership so the seller can be identified on the auction detail page
-      if (address) {
-        try {
-          const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
-          const creators = JSON.parse(creatorsRaw) as Record<string, string>;
-          creators[itemName.trim()] = address;
-          localStorage.setItem('shadowbid.auctionCreators', JSON.stringify(creators));
-        } catch {}
-      }
+      // Store BOTH full and short address forms to handle both check paths
+      try {
+        const fullAddr = window.__shadowbidFullAddress ?? address ?? '';
+        const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
+        const creators = JSON.parse(creatorsRaw) as Record<string, string>;
+        creators[itemName.trim()] = fullAddr;
+        if (address) creators[`short:${itemName.trim()}`] = address;
+        localStorage.setItem('shadowbid.auctionCreators', JSON.stringify(creators));
+      } catch {}
 
       setTx({ phase: 'done', label: '✓ Auction created and submitted to network!' });
       setTimeout(() => {

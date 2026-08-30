@@ -102,17 +102,24 @@ export function MyParticipation() {
                   !a ? 'unknown yet' : a.status === AuctionStatus.OPEN ? 'auction open' : r.claimed ? 'claimed' : a.hasWinner ? 'settled' : 'claimable!';
                 // Seller check: localStorage (set at creation) is the most reliable source
                 const isBidSeller = (() => {
-                  if (!address || !a) return false;
+                  if (!a) return false;
+                  const fullAddr = window.__shadowbidFullAddress ?? address ?? '';
+                  if (!fullAddr) return false;
                   try {
                     const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
                     const creators = JSON.parse(creatorsRaw) as Record<string, string>;
-                    if (creators[a.itemName] === address) return true;
-                    if (creators[r.auctionId] === address) return true;
+                    const shortAddr = address ?? '';
+                    if (
+                      creators[a.itemName] === fullAddr || creators[a.itemName] === shortAddr ||
+                      creators[r.auctionId] === fullAddr || creators[r.auctionId] === shortAddr
+                    ) return true;
                   } catch {}
-                  // Fallback: ZK key comparison
+                  // Fallback: ZK key comparison with full address
                   if (!myPK || !a.sellerPKHex || a.sellerPKHex === '00'.repeat(32)) return false;
-                  const myPKHex = Array.from(pureCircuits.derivePublicKey(ensureAppSecretKey(address!))).map(b => b.toString(16).padStart(2,'0')).join('');
-                  return myPKHex.toLowerCase() === a.sellerPKHex.toLowerCase();
+                  try {
+                    const myPKHex = Array.from(pureCircuits.derivePublicKey(ensureAppSecretKey(fullAddr))).map(b => b.toString(16).padStart(2,'0')).join('');
+                    return myPKHex.toLowerCase() === a.sellerPKHex.toLowerCase();
+                  } catch { return false; }
                 })();
                 return (
                   <tr key={`${r.auctionId}-${r.index}`}>
