@@ -294,6 +294,21 @@ export class ShadowBidClient {
     setCallerSecretKey(sk);
 
     let address = storedContractAddress();
+
+    // Multi-user shared discovery: if this browser has no stored contract yet,
+    // ask the shared live server for the address deployed by another user.
+    // Without this, each new user would deploy their own isolated contract
+    // and never see the other users' auctions.
+    if (!address) {
+      try {
+        const { fetchSharedContractAddress } = await import('./liveSync.js');
+        address = await fetchSharedContractAddress();
+        if (address) console.info('[ShadowBid] Using shared contract address from server:', address);
+      } catch (e) {
+        console.warn('[ShadowBid] Shared contract discovery unavailable:', e);
+      }
+    }
+
     let found: FoundShadowBid;
 
     if (address) {

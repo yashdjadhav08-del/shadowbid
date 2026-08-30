@@ -10,6 +10,39 @@ const PORT = process.env.PORT || 5176;
 const DATA_DIR = path.join(__dirname, 'data');
 const AUCTIONS_FILE = path.join(DATA_DIR, 'auctions.json');
 const CONTRACT_FILE = path.join(DATA_DIR, 'contract.json');
+const DIST_DIR = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
+
+/** MIME types for serving the built static app (dist/). */
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+function serveStatic(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  let pathname = decodeURIComponent(url.pathname);
+  if (pathname === '/') pathname = '/index.html';
+  // Never allow escaping the dist directory.
+  const filePath = path.join(DIST_DIR, path.normalize(pathname).replace(/^(\.\.[/\\])+/, ''));
+  if (!filePath.startsWith(DIST_DIR)) return false;
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
+  const ext = path.extname(filePath).toLowerCase();
+  res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+  fs.createReadStream(filePath).pipe(res);
+  return true;
+}
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -64,6 +97,18 @@ const server = http.createServer((req, res) => {
   }
 
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // Serve built static app (dist/) for non-API paths — one origin for all users.
+  if (!url.pathname.startsWith('/api/') && url.pathname !== '/api') {
+    if (serveStatic(req, res, url)) return;
+    // SPA fallback: any non-file route returns the shell; client router handles it.
+    const indexHtml = path.join(DIST_DIR, 'index.html');
+    if (req.method === 'GET' && fs.existsSync(indexHtml)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      fs.createReadStream(indexHtml).pipe(res);
+      return;
+    }
+  }
 
   if (url.pathname === '/api/live-stream') {
     // SSE Stream

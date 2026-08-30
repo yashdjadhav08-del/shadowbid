@@ -8,6 +8,42 @@
 
 [Live URL]
 
+## Running Locally (shared multi-user live sync)
+
+All users see the same active auctions because the app discovers ONE shared
+contract on Midnight's public network and streams updates through a small live
+server. Run it exactly like this — the live server is REQUIRED, not optional:
+
+```sh
+npm install --force
+npm run sync-assets          # copies managed/ ZK artifacts if needed
+npm run server               # live server: SPA + /api + SSE on http://localhost:5176
+# in another terminal (only if developing):
+npm run dev                  # optional Vite dev server on :5173 (proxies /api -> :5176)
+```
+
+Then open **http://localhost:5176** in the browser. For production, `npm run
+build` outputs to `dist/` and `npm run server` serves it directly — no Vite
+needed.
+
+Multi-user flow:
+
+1. **User A** opens the app, connects 1AM, and creates an auction. The first
+   create deploys the contract; the app publishes the contract address to the
+   live server (`POST /api/contract`).
+2. **User B** (different browser/machine) opens the same URL, connects their
+   own wallet. The app has no locally stored address, so it falls back to the
+   live server (`GET /api/contract`), finds User A's contract, and reads the
+   same on-chain auctions through the indexer. B never deploys an isolated
+   second contract.
+3. New auctions appear live for everyone via Server-Sent Events
+   (`/api/live-stream`).
+
+Only public data crosses the network (item name/description, bid counts,
+contract address, winner after close). Bid amounts and salts never leave the
+browser — they are private circuit witnesses, so they never appear in the API,
+on the server, or in any shared state.
+
 ## Contract Address
 
 | Network | Address |

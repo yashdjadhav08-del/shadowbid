@@ -135,6 +135,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const addr = await getUnshieldedAddress(api);
       setAddress(SHORT(addr));
       window.__shadowbidFullAddress = addr;
+      // Persist so isSeller checks work after page reload
+      try { localStorage.setItem('shadowbid.fullAddress', addr); } catch {}
       setStatus('ready');
       // If contract was already deployed, initialize client in background
       if (storedContractAddress()) {

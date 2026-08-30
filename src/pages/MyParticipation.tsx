@@ -103,7 +103,10 @@ export function MyParticipation() {
                 // Seller check: localStorage (set at creation) is the most reliable source
                 const isBidSeller = (() => {
                   if (!a) return false;
-                  const fullAddr = window.__shadowbidFullAddress ?? address ?? '';
+                  const fullAddr =
+                    window.__shadowbidFullAddress ??
+                    (() => { try { return localStorage.getItem('shadowbid.fullAddress') ?? undefined; } catch { return undefined; } })() ??
+                    address ?? '';
                   if (!fullAddr) return false;
                   try {
                     const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';

@@ -38,15 +38,18 @@ export function AuctionDetail({ id }: { id: bigint }) {
 
   const isSeller = useMemo(() => {
     if (!auction) return false;
-    // Use full wallet address (the shortened `address` state won't match ensureAppSecretKey)
-    const fullAddr = window.__shadowbidFullAddress ?? address;
+    // Use full wallet address — the shortened `address` state won't match ensureAppSecretKey.
+    // Fall back to localStorage-persisted value if page was reloaded after connect.
+    const fullAddr =
+      window.__shadowbidFullAddress ??
+      (() => { try { return localStorage.getItem('shadowbid.fullAddress') ?? undefined; } catch { return undefined; } })() ??
+      address;
     if (!fullAddr) return false;
 
     // Primary check: localStorage entry written at auction creation time
     try {
       const creatorsRaw = localStorage.getItem('shadowbid.auctionCreators') ?? '{}';
       const creators = JSON.parse(creatorsRaw) as Record<string, string>;
-      // Match against both full and short address forms
       const shortAddr = address ?? '';
       if (
         creators[auction.itemName] === fullAddr ||
