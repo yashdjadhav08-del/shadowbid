@@ -246,25 +246,13 @@ export function AuctionDetail({ id }: { id: bigint }) {
           )}
         </div>
       ) : (
-        !auction.hasWinner && (
+        !auction.hasWinner && isSeller && (
           <div className="card" style={{ marginTop: 16, maxWidth: 640 }}>
             <h3>🏁 Auction Closed</h3>
-            {hasPlacedBid ? (
-              <>
-                <p style={{ color: 'var(--text-dim)' }}>
-                  You submitted a sealed bid on this auction! Prove your bid in zero knowledge via a claim to verify if your bid is the winner.
-                </p>
-                <a className="btn btn-success" href="#/my">Claim My Sealed Bid →</a>
-              </>
-            ) : isSeller ? (
-              <p style={{ color: 'var(--text-dim)' }}>
-                Bidding has closed. Bidders are currently proving their sealed bids to determine the winner.
-              </p>
-            ) : (
-              <p style={{ color: 'var(--text-dim)' }}>
-                Bidding has closed. Bidders are currently proving their sealed bids to determine the winner.
-              </p>
-            )}
+            <p style={{ color: 'var(--text-dim)' }}>
+              Bidding has closed. Bidders are currently proving their sealed bids to determine the winner.
+            </p>
+            <a className="btn btn-success" href="#/my">Manage Claims →</a>
           </div>
         )
       )}
