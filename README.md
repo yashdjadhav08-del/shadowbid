@@ -53,16 +53,15 @@ contract address, winner after close). Bid amounts and salts never leave the
 browser — they are private circuit witnesses, so they never appear in the API,
 on the server, or in any shared state.
 
-## Contract Address
+## Contract Address & On-Chain Verification
 
-| Network | Address |
-|---------|---------|
-| Preprod | [CONTRACT ADDRESS] |
+| Network | Status | Transaction / Block |
+|---------|--------|---------------------|
+| Preprod | `SUCCESS` | Tx: `5c15782d318eac80c599535a2f8dd40b35b14620e232e7ff3b2f0a39e18ef1cf` · Block `#2,299,847` |
 
-The contract address is produced by the first `createAuction` call after the
-ShadowBid contract is deployed through the app; it is stored locally and shown
-in the UI footer. Replace this placeholder with your own deployment's address —
-do not trust addresses from other sources.
+![1AM Explorer — Smart Contract Deployment](./docs/images/contract-deployment.png)
+
+The contract is deployed directly on Midnight's Preprod network via the 1AM Wallet; all subsequent user interactions bind securely to this on-chain instance.
 
 ## What This Does
 
@@ -284,11 +283,19 @@ The image multi-stage builds: installs the Compact toolchain → compiles the
 contract → runs the test suite → builds the frontend → serves `dist/` together
 with the ZK artifacts over nginx.
 
+## Continuous Integration & Verification
+
+The project includes automated CI pipelines on GitHub Actions verifying compilation, asset syncing, and test suites across all commits:
+
+![GitHub Actions CI Workflow](./docs/images/ci-workflow.png)
+
 ## Run Tests
 
 ```bash
 npm test
 ```
+
+![Test Suite Execution — Vitest](./docs/images/test-suite.png)
 
 13 tests pass against the compiled contract logic via
 `@midnight-ntwrk/compact-runtime` (no node/infra required):
