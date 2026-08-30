@@ -6,7 +6,9 @@
 
 ## Live Demo
 
-[Live URL]
+🚀 **Vercel Deployment**: [https://shadowbid.vercel.app](https://shadowbid.vercel.app) *(or your deployed Vercel URL)*
+
+> **Note**: To interact with the live demo, make sure you have the [1AM Wallet extension](https://midnight.network) installed and set to **Preprod** network with tDUST from the faucet.
 
 ## Running Locally (shared multi-user live sync)
 
@@ -249,6 +251,18 @@ npm run dev
 
 Contract deployment/calls need DUST for fees; register your funded wallet for
 DUST generation as described in the Midnight docs ("Funding a wallet").
+
+## Vercel Deployment
+
+ShadowBid is fully configured for continuous deployment on [Vercel](https://vercel.com):
+
+1. Push this repository to GitHub.
+2. Go to [Vercel Dashboard](https://vercel.com/new) and click **"Add New Project"**.
+3. Import your GitHub repository (`shadowbid`).
+4. Framework Preset: **Vite** (automatically detected from `vercel.json`).
+5. (Optional) Set environment variables in Vercel project settings:
+   - `VITE_MIDNIGHT_NETWORK_ID`: `preprod` (default)
+6. Click **Deploy**. Vercel will automatically build the application and serve ZK keys, WASM modules, and serverless sync API endpoints.
 
 ## Docker
 

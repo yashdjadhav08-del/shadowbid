@@ -5,9 +5,6 @@ node_modules/
 dist/
 public/managed/
 
-# Compiled contract artifacts (regenerate with `npm run compile-contract`)
-managed/
-
 # Environment
 .env
 .env.local
