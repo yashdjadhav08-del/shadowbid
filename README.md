@@ -1,11 +1,15 @@
 # ShadowBid
 
 [![CI](https://github.com/yashdjadhav08-del/shadowbid/actions/workflows/ci.yml/badge.svg)](https://github.com/yashdjadhav08-del/shadowbid/actions/workflows/ci.yml)
+[![Vercel Deployment](https://img.shields.io/badge/Vercel-Live%20Demo-black?logo=vercel&logoColor=white)](https://shadowbid-lilac.vercel.app)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yashdjadhav08-del/shadowbid)
 
 > Privacy-preserving sealed-bid auction built with Midnight.
 
-## Live Demo
+## Live Demo & Deployment
+
+- 🚀 **Live App**: [https://shadowbid-lilac.vercel.app](https://shadowbid-lilac.vercel.app)
+- ⚡ **1-Click Deploy**:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yashdjadhav08-del/shadowbid)
 

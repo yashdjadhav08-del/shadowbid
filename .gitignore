@@ -17,3 +17,5 @@ public/managed/
 
 # Logs
 *.log
+
+.vercel
