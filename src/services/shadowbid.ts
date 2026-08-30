@@ -524,6 +524,10 @@ export function decodeAuctions(l: Ledger): AuctionView[] {
 
     if (existingNames.has(p.itemName)) {
       removePendingAuction(p.itemName);
+      if ((p as { status?: unknown }).status === AuctionStatus.CLOSED) {
+        const match = out.find((x) => x.itemName === p.itemName);
+        if (match) match.status = AuctionStatus.CLOSED;
+      }
     } else {
       maxId += 1n;
       out.push({

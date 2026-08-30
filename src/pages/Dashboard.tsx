@@ -8,30 +8,7 @@ export function Dashboard({ navigate }: { navigate: (to: string) => void }) {
   const { status, connect, error: walletError } = useWallet();
   const { auctions, loading, error, refresh } = useAuctions();
 
-  // Wallet-only gate — auctions are public, no contract deploy needed to *view* them.
-  if (status !== 'ready' && status !== 'wallet-connected' && status !== 'linking-contract') {
-    return (
-      <Page>
-        <div className="card connect-nudge">
-          <h3>🔒 Connect to view auctions</h3>
-          <p style={{ color: 'var(--text-dim)' }}>
-            Auction metadata is public on Midnight's ledger. Connect your 1AM wallet to read live
-            contract state through the indexer.
-          </p>
-          {(walletError || (status === 'error' && walletError)) && <ErrorAlert message={walletError!} onRetry={() => void connect()} />}
-          {status === 'no-wallet' ? (
-            <div className="alert alert-info">
-              No Midnight wallet detected. Install the <b>1AM</b> wallet extension, then reload.
-            </div>
-          ) : (
-            <button className="btn btn-primary" onClick={() => void connect()}>
-              Connect 1AM Wallet
-            </button>
-          )}
-        </div>
-      </Page>
-    );
-  }
+  const isConnected = status === 'ready' || status === 'wallet-connected' || status === 'linking-contract';
 
   return (
     <Page>
@@ -47,6 +24,28 @@ export function Dashboard({ navigate }: { navigate: (to: string) => void }) {
           {loading ? 'Refreshing…' : '↻ Refresh'}
         </button>
       </div>
+
+      {/* Non-blocking connect banner — auctions are still visible below */}
+      {!isConnected && (
+        <div className="card" style={{ marginTop: 16, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <span style={{ fontWeight: 600 }}>🔒 Connect to bid or create auctions</span>
+            <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: '4px 0 0' }}>
+              Viewing is open to everyone. A wallet is needed to submit bids or create new auctions.
+            </p>
+          </div>
+          {(walletError || (status === 'error' && walletError)) && <ErrorAlert message={walletError!} onRetry={() => void connect()} />}
+          {status === 'no-wallet' ? (
+            <div className="alert alert-info" style={{ margin: 0 }}>
+              No Midnight wallet detected. Install the <b>1AM</b> wallet extension, then reload.
+            </div>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => void connect()}>
+              Connect 1AM Wallet
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="section-gap" />
 
@@ -74,3 +73,4 @@ export function Dashboard({ navigate }: { navigate: (to: string) => void }) {
     </Page>
   );
 }
+

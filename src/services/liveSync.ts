@@ -7,6 +7,47 @@ export type LiveAuctionPayload = {
   bidCount?: number;
 };
 
+// ---------------------------------------------------------------------------
+// Shared contract address discovery (server-first)
+// ---------------------------------------------------------------------------
+
+let liveContractAddress: string | null = null;
+
+/** Returns the contract address received from the shared server, if any. */
+export function getLiveContractAddress(): string | null {
+  return liveContractAddress;
+}
+
+/**
+ * Persist a contract address received from the server into localStorage so
+ * the indexer query path in useAuctions can use it.
+ */
+function persistContractAddress(address: string): void {
+  if (!address) return;
+  liveContractAddress = address;
+  try {
+    localStorage.setItem('shadowbid.contractAddress.preprod', address);
+    localStorage.setItem('shadowbid.contractAddress', address);
+  } catch {}
+}
+
+/**
+ * Fetch the shared contract address from the live server.
+ * Returns the address string or null if the server doesn't have one.
+ */
+export async function fetchSharedContractAddress(): Promise<string | null> {
+  try {
+    const res = await fetch('/api/contract');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.contractAddress) {
+      persistContractAddress(data.contractAddress);
+      return data.contractAddress;
+    }
+  } catch {}
+  return null;
+}
+
 const broadcastChan = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('shadowbid_live') : null;
 
 /** Notify UI components of live auction / contract updates */
@@ -32,6 +73,9 @@ export function initLiveSync(): void {
       }
     })
     .catch(() => {});
+
+  // Also fetch the shared contract address so this browser can query the indexer
+  fetchSharedContractAddress().then(() => emitLiveUpdate()).catch(() => {});
 
   if (eventSource) return;
 
@@ -59,8 +103,7 @@ export function initLiveSync(): void {
           liveAuctionsCache = data.auctions;
         }
         if (data.contractAddress) {
-          localStorage.setItem('shadowbid.contractAddress.preprod', data.contractAddress);
-          localStorage.setItem('shadowbid.contractAddress', data.contractAddress);
+          persistContractAddress(data.contractAddress);
         }
         emitLiveUpdate();
       } catch {}
@@ -80,8 +123,7 @@ export function initLiveSync(): void {
       try {
         const data = JSON.parse(e.data);
         if (data.contractAddress) {
-          localStorage.setItem('shadowbid.contractAddress.preprod', data.contractAddress);
-          localStorage.setItem('shadowbid.contractAddress', data.contractAddress);
+          persistContractAddress(data.contractAddress);
           emitLiveUpdate();
         }
       } catch {}
@@ -123,8 +165,7 @@ export async function publishLiveAuction(auction: LiveAuctionPayload): Promise<v
 }
 
 export async function publishLiveContract(contractAddress: string): Promise<void> {
-  localStorage.setItem('shadowbid.contractAddress.preprod', contractAddress);
-  localStorage.setItem('shadowbid.contractAddress', contractAddress);
+  persistContractAddress(contractAddress);
 
   try {
     await fetch('/api/contract', {
