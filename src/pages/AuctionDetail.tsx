@@ -286,13 +286,38 @@ export function AuctionDetail({ id }: { id: bigint }) {
       )}
 
       {auction.hasWinner && (
-        <div className="alert alert-success" style={{ maxWidth: 640 }}>
-          <span>🏆</span>
-          <span>
-            <b>Auction Closed — Winner Verified.</b> Winning bid:{' '}
-            <b className="win-amount">{auction.winningAmount?.toString()}</b>. All losing bid amounts
-            remain sealed forever.
-          </span>
+        <div className="card" style={{ marginTop: 16, maxWidth: 640, borderColor: 'var(--color-success, #22c55e)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 28 }}>🏆</span>
+            <div>
+              <h3 style={{ margin: 0, color: 'var(--color-success, #22c55e)' }}>Auction Settled — Winner Verified</h3>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-dim)' }}>ZK proof confirmed on-chain. Losing bids remain sealed forever.</p>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="stat-box">
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 1 }}>Winning Amount</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace' }}>
+                {auction.winningAmount?.toString()} <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>DUST</span>
+              </div>
+            </div>
+            <div className="stat-box">
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 1 }}>Winner Public Key</div>
+              <div className="mono" style={{ fontSize: 12, wordBreak: 'break-all' }}>
+                {auction.winnerPKHex ? `${auction.winnerPKHex.slice(0, 12)}…${auction.winnerPKHex.slice(-8)}` : '—'}
+              </div>
+            </div>
+          </div>
+          {isSeller && (
+            <div className="alert alert-info" style={{ marginBottom: 0 }}>
+              <span>ℹ️</span>
+              <span style={{ fontSize: 13 }}>
+                <b>Action required:</b> Send <b>{auction.winningAmount?.toString()} DUST</b> to the winner.
+                The winning bidder's identity key is shown above — they can share their wallet address with you to receive payment.
+                This contract proves the auction outcome; the token transfer happens via your wallet directly.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
