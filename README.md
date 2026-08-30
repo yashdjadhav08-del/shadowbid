@@ -1,12 +1,15 @@
 # ShadowBid
 
-[![CI](https://github.com/USERNAME/shadowbid/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/shadowbid/actions/workflows/ci.yml)
+[![CI](https://github.com/yashdjadhav08-del/shadowbid/actions/workflows/ci.yml/badge.svg)](https://github.com/yashdjadhav08-del/shadowbid/actions/workflows/ci.yml)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yashdjadhav08-del/shadowbid)
 
 > Privacy-preserving sealed-bid auction built with Midnight.
 
 ## Live Demo
 
-🚀 **Vercel Deployment**: [https://shadowbid.vercel.app](https://shadowbid.vercel.app) *(or your deployed Vercel URL)*
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yashdjadhav08-del/shadowbid)
+
+Click the **Deploy with Vercel** button above to deploy your own instance of ShadowBid to Vercel in 1 click.
 
 > **Note**: To interact with the live demo, make sure you have the [1AM Wallet extension](https://midnight.network) installed and set to **Preprod** network with tDUST from the faucet.
 
