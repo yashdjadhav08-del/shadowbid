@@ -8,6 +8,7 @@
 ## Live Demo
 
 - 🚀 **Live App**: [https://shadowbid-lilac.vercel.app](https://shadowbid-lilac.vercel.app)
+- 🎬 **Demo Video**: [Watch Demo Video](https://drive.google.com/file/d/1nR2FnKxOwvDfhX2Aau0fZFsINL8-NTHq/view?usp=sharing)
 
 > **Note**: To interact with the live demo, make sure you have the [1AM Wallet extension](https://midnight.network) installed and set to **Preprod** network with tDUST from the faucet.
 
